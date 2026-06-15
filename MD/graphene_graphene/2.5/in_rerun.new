@@ -1,0 +1,64 @@
+# From rerun to compute interlayer FORCE
+
+label loop_start #loop to translate in different direction
+variable Angle loop 0 60  
+variable foo string m22n23_tri30_2.5
+
+dimension	3
+boundary	p p s
+units		metal
+
+
+atom_style	bond
+newton		on
+
+read_data	 ${foo}.in 
+group top type 1
+group bot type 2
+group Stage type 3
+
+group graphene union top bot
+
+
+pair_style hybrid/overlay rebo kolmogorov/crespi/z 20.0
+pair_coeff * * rebo                 CH.rebo    C C NULL
+pair_coeff 1 2 kolmogorov/crespi/z  CC.KC      C C NULL
+pair_coeff 1*3 3 none  #virtual stage atoms has no interaction 
+pair_coeff 2 2 none
+bond_style none
+
+neighbor	2 bin
+neigh_modify exclude type 3 3 # set stage as rigid body
+neigh_modify exclude type 2 3
+neigh_modify exclude type 2 2
+neigh_modify exclude type 1 3
+
+compute 0 all pair kolmogorov/crespi/z 
+compute 2 top reduce sum fx fy 
+
+
+timestep	0.001 # 1 fs
+
+thermo 1000      
+thermo_style custom step temp c_2[*]
+
+
+variable stage2 index slip
+
+# c_0:Energy output; c_2[1]:x-direction force output; [2] y-direction force output
+fix fxOutput top ave/time 1 1 1 c_0 c_2[1] c_2[2] file ${foo}_force_$(v_Angle*3).txt 
+
+rerun ${foo}_$(v_Angle*3).lammpstrj dump x y z 
+
+unfix fxOutput
+
+clear
+next Angle
+jump in_rerun.new loop_start
+
+
+
+
+
+
+

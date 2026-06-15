@@ -1,0 +1,100 @@
+# Simulate a top layer of graphene  dragged by virtual stage atoms.
+# Each atom in the flexible graphene layer is connected to its image atom in the stage through a harmonic spring
+# bottom layer of graphene is  fixed
+#     group  type    atom
+#       top   1   graphene
+#       bot   2   graphene
+#       stage 3   carbon
+
+
+label loop_start #loop to translate in different direction
+variable Angle loop 0 60  
+variable angle equal $(v_Angle*3)/180*PI 
+
+variable foo string m22n23_tri30_4.0
+
+dimension	3
+boundary	p p s
+units		metal
+
+atom_style	bond
+newton		on
+
+read_data	 ${foo}.in 
+group top type 1
+group bot type 2
+group Stage type 3
+
+group graphene union top bot
+
+variable K equal 5  # eV/A^2
+variable init_distance equal 0  #initial distance of stage and top layer. Here we set 0
+
+pair_style hybrid/overlay rebo kolmogorov/crespi/z 20.0
+pair_coeff * * rebo                 CH.rebo    C C NULL
+pair_coeff 1 2 kolmogorov/crespi/z  CC.KC      C C NULL
+pair_coeff 1*3 3 none  #virtual stage atoms has no interaction 
+
+bond_style harmonic
+bond_coeff 1 ${K} ${init_distance} 
+
+neighbor	2 bin
+neigh_modify exclude type 3 3 # set stage as rigid body
+neigh_modify exclude type 2 3
+neigh_modify exclude type 2 2
+neigh_modify exclude type 1 3
+
+
+variable fxSum equal fcm(top,x) #sum of x force of top layer
+variable fySum equal fcm(top,y) #sum of x force of top layer
+
+variable    TEMP equal 0.1
+
+variable vel equal 5/100  #  Angstroms/picosecond
+variable velx equal ${vel}*cos(${angle})  #translation direction
+variable vely equal ${vel}*sin(${angle})
+
+timestep	0.001 # 1 fs
+
+thermo 1000      
+thermo_style custom step temp 
+thermo_modify flush yes
+
+
+# initial velocities
+velocity top create ${TEMP} 4928459 rot yes mom yes dist gaussian
+# fix settings
+fix 1a bot setforce 0.0 0.0 0.0 
+fix 2a Stage setforce 0.0 0.0 0.0
+fix 1b top nvt temp ${TEMP} ${TEMP} 0.1
+
+#relaxation of top layer
+variable stage1 index relaxation
+#dump 1 top custom 100 ${foo}_${stage1}.lammpstrj id type x y z fx fy fz
+
+run 500   
+
+reset_timestep 0 
+
+variable stage2 index slip
+
+#Stage begin to move at constant velocity
+fix pull Stage move linear ${velx} ${vely} 0 units box  #moving distance=vel*timestep*step (Angstroms)
+
+variable stage2 index slip
+dump 2 top custom 2000 ${foo}_$(v_Angle*3).lammpstrj id type x y z fx fy fz 
+
+run 200000
+
+undump 2
+
+clear
+
+
+next Angle
+jump in.new loop_start
+
+
+
+
+

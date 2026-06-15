@@ -1,0 +1,100 @@
+# Simulate a top layer of graphene  dragged by virtual stage atoms.
+# Each atom in the flexible graphene layer is connected to its image atom in the stage through a harmonic spring
+# bottom layer of HBN is  fixed
+#     group  type   atom
+#       top   1   Boron
+#       bot   2   Nitrogen
+#       gra   3   carbon
+#       Stage   4   carbon
+
+
+label loop_start #loop to translate in different direction
+variable Angle loop 0 60 
+variable angle equal $(v_Angle*3)/180*PI 
+
+variable foo string graHBNR0.00
+
+dimension	3
+boundary	p p s
+units		metal
+
+atom_style	bond
+newton		on
+
+read_data	 ${foo}.in 
+group B type 1
+group	N type 2
+group	gra type 3
+group  Stage type 4
+group  bot type 1 2
+group  top type 3
+
+variable K equal 5  # eV/A^2
+variable init_distance equal 0  #initial distance of stage and top layer. Here we set 0
+
+pair_style  hybrid/overlay rebo tersoff ilp/graphene/hbn 16.0 
+pair_coeff  * * rebo               CH.rebo     NULL NULL C NULL    # chemical
+pair_coeff  * * tersoff            BNC.tersoff B    N    NULL NULL # chemical
+pair_coeff  * * ilp/graphene/hbn   BNCH.ILP    B    N    C  NULL  # long range
+pair_coeff  1*4 4 none  #virtual stage atoms has no interaction 
+
+bond_style harmonic
+bond_coeff 1 ${K} ${init_distance} 
+
+neighbor	2 bin
+neigh_modify exclude type 4 4 # set stage as rigid body
+neigh_modify exclude type 1 2
+neigh_modify exclude type 1 4
+neigh_modify exclude type 4 1
+
+variable fxSum equal fcm(top,x) #sum of x force of top layer
+variable fySum equal fcm(top,y) #sum of x force of top layer
+
+variable    TEMP equal 0.1
+
+variable vel equal 5/100  #  Angstroms/picosecond
+variable velx equal ${vel}*cos(${angle})  #translation direction
+variable vely equal ${vel}*sin(${angle})
+
+timestep	0.001 # 1 fs
+
+thermo 500      
+thermo_style custom step temp 
+thermo_modify flush yes
+
+
+# initial velocities
+velocity top create ${TEMP} 4928459 rot yes mom yes dist gaussian
+# fix settings
+fix 1a bot setforce 0.0 0.0 0.0 
+fix 2a Stage setforce 0.0 0.0 0.0
+fix 1b top nvt temp ${TEMP} ${TEMP} 0.1
+
+#relaxation of top layer
+variable stage1 index relaxation
+
+run 500   
+
+reset_timestep 0 
+
+variable stage2 index slip
+
+#Stage begin to move at constant velocity
+fix pull Stage move linear ${velx} ${vely} 0 units box  #moving distance=vel*timestep*step (Angstroms)
+
+variable stage2 index slip
+dump 2 top custom 2000 ${foo}_$(v_Angle*3).lammpstrj id type x y z fx fy fz 
+
+run 200000
+
+undump 2
+
+clear
+
+next Angle
+jump in.new loop_start
+
+
+
+
+
